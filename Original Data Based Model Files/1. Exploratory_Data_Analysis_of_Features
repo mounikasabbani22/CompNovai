@@ -1,0 +1,171 @@
+
+<div style="text-align: center; line-height: 0; padding-top: 9px;">  
+  <img src="/Volumes/cmidev/default/preventech/DBX_hack/compnovai_logo.PNG" alt="Image">  
+</div> 
+# Overview
+This notebook performs exploratory data exploration of various numerical and categorical/metadata features from the dataset that Cummins provided to us.
+
+For this submission, we uploaded the data at a volume location, however this data is also available in Unity Catalog tables in our workspace.
+
+In this dataset, "FAILURE_MODE_BUCKET" is the target label.
+ctt_claims = '/Volumes/cmidev/default/preventech/data/sample_data.csv'
+df = spark.read.format("csv") \
+    .option("header", True) \
+    .load(ctt_claims)
+display(df.limit(10))
+# Data exploration
+
+
+ctt_claims = '/Volumes/cmidev/default/preventech/data/ctt_claims.csv'
+df = spark.read.format("csv") \
+    .option("header", True) \
+    .load(ctt_claims)
+# display(df.limit(10))
+df.columns
+# Reduce number of features to be explored as per recommendation from the Subject Matter Expert
+combined_columns_to_explore = ['ESN','CLAIM_ID_SEQ','ENGINE_NAME_DESC','OEM_CODE','USERAPP','FAILCODE','DEALER','DISTR','SHOPORDERNUM','BUILD_YEAR','FC 1','FC 2','FC 3','FC 4','FC 5','MIS20','MILES','NETAMT','Failure Mode Bucket']
+# metadata_columns_to_explore = ['ESN','CLAIM_ID_SEQ','Failure Mode Bucket']
+df_ = df[combined_columns_to_explore]
+display(df_.limit(10))
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# Clean numerical features
+from pyspark.sql.functions import col, isnan, when, count
+
+from pyspark.sql import functions as F
+
+df_clean = df_.filter((F.col("DEALER").isNull() | F.col("DEALER").cast("double").isNotNull()) &
+    (F.col("DISTR").isNull() | F.col("DISTR").cast("double").isNotNull()) &
+    (F.col("SHOPORDERNUM").isNull() | F.col("SHOPORDERNUM").cast("double").isNotNull()) &
+    (F.col("OEM_CODE").isNull() | F.col("OEM_CODE").cast("double").isNotNull()) )
+display(df_clean)
+from pyspark.sql.functions import col, isnan, when, count
+
+from pyspark.sql import functions as F
+
+df_clean = df_.filter((F.col("FC 1").isNull() | F.col("FC 1").cast("double").isNotNull()) &
+    (F.col("FC 2").isNull() | F.col("FC 2").cast("double").isNotNull()) &
+    (F.col("FC 3").isNull() | F.col("FC 3").cast("double").isNotNull()) &
+    (F.col("FC 4").isNull() | F.col("FC 4").cast("double").isNotNull()) &
+    (F.col("FC 5").isNull() | F.col("FC 5").cast("double").isNotNull()))
+df_clean.display()
+# Fill null values of Failure Mode Bucket with "Not Inspected"
+df_clean.select("Failure Mode Bucket").distinct().display()
+df_clean = df_clean.withColumn("Failure Mode Bucket",when(col("Failure Mode Bucket").isNull(),"Not Inspected").otherwise(col("Failure Mode Bucket")))
+# df_clean.display()
+# Clean Failure Mode Bucket to have only text values
+df_clean = df_clean.withColumn("Failure Mode Bucket",when(col("Failure Mode Bucket").cast("double").isNotNull(),"Not Inspected").otherwise(col("Failure Mode Bucket")))
+# df_clean.display()
+df_clean = df_clean.withColumn("Failure Mode Bucket", when(col("Failure Mode Bucket").rlike("^\d+$|\|"), "Not Inspected").otherwise(col("Failure Mode Bucket")))
+# df_clean.display()
+df_clean.select("Failure Mode Bucket").distinct().display()
+df_clean = df_clean.withColumn("FC 1", df_clean["FC 1"].cast("double"))
+df_clean = df_clean.withColumn("FC 2", df_clean["FC 2"].cast("double"))
+df_clean = df_clean.withColumn("FC 3", df_clean["FC 3"].cast("double"))
+df_clean = df_clean.withColumn("FC 4", df_clean["FC 4"].cast("double"))
+df_clean = df_clean.withColumn("FC 5", df_clean["FC 5"].cast("double"))
+df_clean = df_clean.withColumn("NETAMT", df_clean["NETAMT"].cast("double"))
+df_clean = df_clean.withColumn("MILES", df_clean["MILES"].cast("double"))
+# df_clean = df_clean.withColumn("BUILD_YEAR", df_clean["BUILD_YEAR"].cast("double"))
+df_clean = df_clean.withColumn("MIS20", df_clean["MIS20"].cast("double"))
+df_clean = df_clean.drop('ESN', 'CLAIM_ID_SEQ')
+display(df_clean)
+# Change data types of columns from string to numeric
+# df_clean = df_clean.withColumn("DEALER", df_clean["DEALER"].cast("double"))
+# df_clean = df_clean.withColumn("DISTR", df_clean["DISTR"].cast("double"))
+# df_clean = df_clean.withColumn("SHOPORDERNUM", df_clean["SHOPORDERNUM"].cast("double"))
+df_clean = df_clean.withColumn("OEM_CODE", df_clean["OEM_CODE"].cast("double"))
+
+from pyspark.sql import Row
+from pyspark.sql.types import StructType, StructField, DoubleType
+def denseMatrixToDataFrame(denseMatrix, spark):
+    # Extract the array from the DenseMatrix
+    matrixArray = denseMatrix.toArray()
+    
+    # Create a list of Rows, each Row corresponding to a row in the DenseMatrix
+    rows = [Row(*row) for row in matrixArray]
+    
+    # Define the schema of the DataFrame to have as many DoubleType fields as there are columns
+    schema = StructType([StructField(str(i), DoubleType(), False) for i in range(len(matrixArray[0]))])
+    
+    # Create a DataFrame using the rows and schema
+    df = spark.createDataFrame(rows, schema)
+    
+    return df
+# Correlation Analysis of Features
+from pyspark.ml.feature import VectorAssembler, StringIndexer
+from pyspark.ml.stat import Correlation
+from pyspark.ml import Pipeline
+
+# Corrected list comprehension for indexers
+indexers = [
+    StringIndexer(inputCol=col, outputCol=f"{col}_Indexed", handleInvalid="skip")
+    for col in ["Failure Mode Bucket", "ENGINE_NAME_DESC", "USERAPP", "FAILCODE","SHOPORDERNUM","DEALER","DISTR","BUILD_YEAR","FC 1","FC 2","FC 3","FC 4","FC 5","OEM_CODE"]
+]
+
+# Impute missing values in the dataset directly using fillna
+df_clean = df_clean.fillna(0, subset=[col for col in df_clean.columns if "FC" in col])
+df_clean = df_clean.fillna(0)
+
+# Assemble all the features including the newly indexed category and imputed values into a single vector column
+assemblerInputs = [col for col in df_clean.columns if col not in ["Failure Mode Bucket", "ENGINE_NAME_DESC", "USERAPP", "FAILCODE","SHOPORDERNUM","DEALER","DISTR","BUILD_YEAR","FC 1","FC 2","FC 3","FC 4","FC 5","OEM_CODE"]] + \
+                  [f"{col}_Indexed" for col in ["Failure Mode Bucket", "ENGINE_NAME_DESC", "USERAPP", "FAILCODE","SHOPORDERNUM","DEALER","DISTR","BUILD_YEAR","FC 1","FC 2","FC 3","FC 4","FC 5","OEM_CODE"]]
+assembler = VectorAssembler(inputCols=assemblerInputs, outputCol="features")
+
+# Build the pipeline with indexers and assembler
+pipeline = Pipeline(stages=indexers + [assembler])
+
+# Fit the pipeline to your data
+pipelineModel = pipeline.fit(df_clean)
+
+# Transform the data
+df_transformed = pipelineModel.transform(df_clean)
+
+# Compute the Pearson correlation matrix on the transformed DataFrame
+matrix = Correlation.corr(df_transformed, "features").collect()[0][0]
+correlation_matrix = matrix.toArray().tolist()
+
+# display(correlation_matrix)
+import seaborn as sns
+import matplotlib.pyplot as plt
+plt.figure(figsize=(16, 14))
+# Create a heatmap
+mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
+column_names = df_clean.columns
+
+sns.heatmap(correlation_matrix, mask=mask,annot=True, cmap='coolwarm', xticklabels=column_names, yticklabels=column_names)
+plt.show()
+# Fail Code Wise Correlation
+plt.figure(figsize=(12, 8))
+
+df_clean_pandas = df_clean.toPandas()
+df_pandas_encoded = pd.get_dummies(df_clean_pandas, columns=['FAILCODE'])
+corr = df_pandas_encoded.corr()
+
+mask = np.triu(np.ones_like(corr, dtype=bool))
+sns.heatmap(corr, annot=True, cmap='coolwarm', mask=mask)
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(60, 30))
+
+df_clean_pandas = df_clean.toPandas()
+df_pandas_encoded = pd.get_dummies(df_clean_pandas, columns=['Failure Mode Bucket'])
+corr = df_pandas_encoded.corr()
+
+mask = np.triu(np.ones_like(corr, dtype=bool))
+sns.heatmap(corr, annot=True, cmap='coolwarm', mask=mask)
+# Conclusion: 
+Features to be selected for model build are:
+- Engine Name: Indicates engine model name
+- Claim Narrative: Text containing description of failure symptom, troubleshooting steps executed by the technician during repair, observations captured in the form of text data and repair performed indicating components replaced.
+- Fault Code: Numerical fault code associated with the failure
+- Fail Code: 4-letter code comprised of first 2 letters indicating engine system and last 2 letters indicating component failed (We took first 5)
+- Dealer Code: Code of the dealer as per Cummins registration system that performed repair
+- Distributor Code: Code of the distributor as per Cummins registration system
+- OEM Code: Code of the Original Equipment Manufacturer as per Cummins registration system
+
