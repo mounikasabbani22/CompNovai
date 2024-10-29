@@ -8,8 +8,8 @@ Original Data Based Model Files:
   5. Embeddings Based MultiClass Prediction: Notebook to train and inference multi-class classifiction model, trained on real data embeddings
 
 Synthetic Data Based Model Files:
-	This folder contains total 5 python notebooks, that are accessing "Synthetic" data which is an alternate way to showcase our data and explore various modeling approaches.
-	1. Preparing_Synthetic_Data_for_RAG: As the name suggests, this notebook focusses on generating synthetic data to be fed to the RAG pipeline to perform further tasks.
+This folder contains total 5 python notebooks, that are accessing "Synthetic" data which is an alternate way to showcase our data and explore various modeling approaches.
+  1. Preparing_Synthetic_Data_for_RAG: As the name suggests, this notebook focusses on generating synthetic data to be fed to the RAG pipeline to perform further tasks.
   2. Synth_Data_Vector_Search_Index: After performing embeddings on the existing synthetic data, a vector search index table would be created to fetch the docs quickly.
   3. Evaluation_Metrics_MLFlow_SynthData: This notebook evaluates the quality of synthetic data vs the original data which showcases the similarity of the datasets.
   4. Synth_data_BERT_Based_Uncased: This notebook performs model development by running it through google's BERT Based model and measures accuracy accordingly.
